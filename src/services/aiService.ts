@@ -1,54 +1,56 @@
 import { RecognitionResult } from '../types';
 
-// 模拟AI识别服务（实际项目中需要接入通义千问VL模型API）
+// 将图片文件转换为base64格式
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+  });
+}
+
 export const aiService = {
   async recognizeFood(imageFile: File): Promise<RecognitionResult> {
-    // 模拟API调用延迟
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // 模拟不同食物的识别结果
-    const mockResults: RecognitionResult[] = [
-      {
-        food_name: "鸡胸肉沙拉",
-        calorie_estimate: 320,
-        confidence: 0.92,
-        health_tips: "富含优质蛋白质，适合减脂期食用"
-      },
-      {
-        food_name: "拿铁咖啡",
-        calorie_estimate: 180,
-        confidence: 0.88,
-        health_tips: "含有咖啡因，建议适量饮用"
-      },
-      {
-        food_name: "蔬菜炒饭",
-        calorie_estimate: 420,
-        confidence: 0.85,
-        health_tips: "搭配较为均衡，注意控制分量"
-      },
-      {
-        food_name: "苹果",
-        calorie_estimate: 85,
-        confidence: 0.95,
-        health_tips: "富含膳食纤维和维生素C，健康零食"
-      },
-      {
-        food_name: "巧克力蛋糕",
-        calorie_estimate: 450,
-        confidence: 0.90,
-        health_tips: "高热量甜品，建议适量享用"
+    try {
+      // 将图片转换为base64
+      const base64Image = await fileToBase64(imageFile);
+      
+      // 发送到后端API进行食物识别
+      const response = await fetch('http://localhost:3001/api/image/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64Image
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
       }
-    ];
-    
-    // 随机返回一个结果
-    const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
-    
-    // 有10%的概率模拟识别失败
-    if (Math.random() < 0.1) {
-      throw new Error('识别失败，请尝试拍摄更清晰的食物图片');
+      
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || '食物识别失败');
+      }
+      
+      // 转换后端返回的数据格式以匹配前端期望的格式
+      return {
+        food_name: result.food.name,
+        calorie_estimate: result.food.nutrition.calories,
+        confidence: 0.95, // 后端未提供置信度，使用默认值
+        health_tips: result.food.recommendation,
+        gi_value: result.food.gi_value,
+        suitable_for_diabetes: result.food.suitable_for_diabetes,
+        nutrition: result.food.nutrition
+      };
+    } catch (error) {
+      console.error('食物识别错误:', error);
+      throw new Error(error instanceof Error ? error.message : '食物识别失败，请稍后重试');
     }
-    
-    return randomResult;
   },
 
   compressImage(file: File, maxSize: number = 800): Promise<File> {

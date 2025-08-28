@@ -10,9 +10,19 @@ export interface CalorieRecord {
   healthTips?: string;
 }
 
+export interface NutritionInfo {
+  protein: string;
+  carbs: string;
+  fat: string;
+  calories: string;
+}
+
 export interface RecognitionResult {
   food_name: string;
-  calorie_estimate: number;
+  calorie_estimate: number | string;
   confidence: number;
   health_tips: string;
+  gi_value?: number;
+  suitable_for_diabetes?: string;
+  nutrition?: NutritionInfo;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Image, Loader2 } from 'lucide-react';
+import { Camera, Image, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { aiService } from '../services/aiService';
 import { storageService } from '../services/storage';
 import { CalorieRecord, RecognitionResult } from '../types';
@@ -54,7 +54,9 @@ export const RecognitionPage: React.FC = () => {
         time: now.toTimeString().slice(0, 5),
         timestamp: now.getTime(),
         foodName: recognitionResult.food_name,
-        calorie: recognitionResult.calorie_estimate,
+        calorie: typeof recognitionResult.calorie_estimate === 'number' 
+          ? recognitionResult.calorie_estimate 
+          : parseInt(recognitionResult.calorie_estimate as string) || 0,
         imagePath: imageUrl,
         confidence: recognitionResult.confidence,
         healthTips: recognitionResult.health_tips
@@ -75,6 +77,15 @@ export const RecognitionPage: React.FC = () => {
     setError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRetry = () => {
+    setError(null);
+    setIsRecognizing(true);
+    const file = fileInputRef.current?.files?.[0];
+    if (file) {
+      handleFileSelect({ target: { files: [file] } } as React.ChangeEvent<HTMLInputElement>);
     }
   };
 
@@ -144,7 +155,9 @@ export const RecognitionPage: React.FC = () => {
                   <h2 className="text-3xl font-bold text-gray-900 mb-3">{result.food_name}</h2>
                   <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 mb-4 shadow-lg">
                     <div className="flex items-center justify-center space-x-2">
-                      <span className="text-4xl font-bold text-white">{result.calorie_estimate}</span>
+                      <span className="text-4xl font-bold text-white">
+                        {typeof result.calorie_estimate === 'number' ? result.calorie_estimate : result.calorie_estimate}
+                      </span>
                       <span className="text-emerald-100 text-lg">千卡</span>
                     </div>
                   </div>
@@ -153,6 +166,36 @@ export const RecognitionPage: React.FC = () => {
                     <span className="text-sm text-gray-700 font-medium">识别准确度: {Math.round(result.confidence * 100)}%</span>
                   </div>
                 </div>
+                
+                {/* 营养信息展示 */}
+                {result.nutrition && (
+                  <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl p-5 mb-6 border border-purple-100">
+                    <h3 className="font-bold text-purple-900 mb-3 flex items-center">
+                      <span className="mr-2">🥗</span>
+                      营养成分
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white rounded-xl p-3 shadow-sm">
+                        <p className="text-xs text-purple-600 mb-1">蛋白质</p>
+                        <p className="text-lg font-bold text-gray-900">{result.nutrition.protein}</p>
+                      </div>
+                      <div className="bg-white rounded-xl p-3 shadow-sm">
+                        <p className="text-xs text-purple-600 mb-1">碳水化合物</p>
+                        <p className="text-lg font-bold text-gray-900">{result.nutrition.carbs}</p>
+                      </div>
+                      <div className="bg-white rounded-xl p-3 shadow-sm">
+                        <p className="text-xs text-purple-600 mb-1">脂肪</p>
+                        <p className="text-lg font-bold text-gray-900">{result.nutrition.fat}</p>
+                      </div>
+                      {result.gi_value !== undefined && (
+                        <div className="bg-white rounded-xl p-3 shadow-sm">
+                          <p className="text-xs text-purple-600 mb-1">GI值</p>
+                          <p className="text-lg font-bold text-gray-900">{result.gi_value}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-5 mb-6 border border-blue-100">
                   <h3 className="font-bold text-blue-900 mb-2 flex items-center">
@@ -175,16 +218,25 @@ export const RecognitionPage: React.FC = () => {
               <div className="bg-gradient-to-t from-white to-gray-50 p-6">
                 <div className="text-center">
                   <div className="w-20 h-20 bg-gradient-to-r from-red-400 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <span className="text-3xl">😔</span>
+                    <AlertCircle className="w-10 h-10 text-white" />
                   </div>
                   <h2 className="text-2xl font-bold text-gray-900 mb-3">识别遇到问题</h2>
                   <p className="text-red-600 mb-6 bg-red-50 rounded-xl p-3 border border-red-100">{error}</p>
-                  <button
-                    onClick={resetState}
-                    className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-4 px-8 rounded-2xl font-bold hover:from-emerald-600 hover:to-teal-700 transition-all duration-300 shadow-lg transform hover:scale-105"
-                  >
-                    重新尝试
-                  </button>
+                  <div className="space-y-4">
+                    <button
+                      onClick={handleRetry}
+                      className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-4 px-8 rounded-2xl font-bold hover:from-emerald-600 hover:to-teal-700 transition-all duration-300 shadow-lg transform hover:scale-105 flex items-center justify-center space-x-2"
+                    >
+                      <RefreshCw size={20} />
+                      <span>重新尝试</span>
+                    </button>
+                    <button
+                      onClick={resetState}
+                      className="w-full border-2 border-gray-300 text-gray-700 py-4 px-8 rounded-2xl font-bold hover:bg-gray-50 transition-all duration-300"
+                    >
+                      上传新照片
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
