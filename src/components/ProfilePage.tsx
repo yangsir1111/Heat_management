@@ -18,10 +18,17 @@ export const ProfilePage: React.FC = () => {
   };
 
   const handleDeleteRecord = (id: string) => {
+    console.log('尝试删除记录，ID:', id);
     if (window.confirm('确定要删除这条记录吗？')) {
-      storageService.deleteRecord(id);
-      // 重新加载数据
-      loadAllRecords();
+      try {
+        storageService.deleteRecord(id);
+        console.log('记录删除成功');
+        // 重新加载数据
+        loadAllRecords();
+      } catch (error) {
+        console.error('删除记录时发生错误:', error);
+        alert('删除失败，请重试');
+      }
     }
   };
 
@@ -62,8 +69,11 @@ export const ProfilePage: React.FC = () => {
                       className="w-64 h-36 sm:w-40 sm:h-22.5 object-cover rounded-2xl shadow-md transform hover:scale-105 transition-transform"
                     />
                     <button
-                      onClick={() => handleDeleteRecord(record.id)}
-                      className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md text-red-500 hover:text-red-700 hover:bg-red-50 transition-all"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRecord(record.id);
+                      }}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-2 shadow-lg hover:bg-red-600 transition-all transform hover:scale-110 z-10"
                       aria-label="删除记录"
                     >
                       <MinusCircle size={20} />
