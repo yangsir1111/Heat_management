@@ -1,198 +1,106 @@
 import React, { useState, useEffect } from 'react';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+import { MinusCircle, Info, Camera } from 'lucide-react';
 import { storageService } from '../services/storage';
-import { TodayDetails } from './TodayDetails';
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+import { CalorieRecord } from '../types';
 
 export const ProfilePage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'today' | '7days' | '30days'>('today');
-  const [showTodayDetails, setShowTodayDetails] = useState(false);
-  const [stats, setStats] = useState({
-    today: 0,
-    week: 0,
-    month: 0
-  });
-  const [chartData, setChartData] = useState<any>(null);
+  const [allRecords, setAllRecords] = useState<CalorieRecord[]>([]);
 
   useEffect(() => {
-    loadData();
-  }, [activeTab]);
+    loadAllRecords();
+  }, []);
 
-  const loadData = () => {
-    // 计算统计数据
-    const todayRecords = storageService.getTodayRecords();
-    const todayTotal = todayRecords.reduce((sum, record) => sum + record.calorie, 0);
-    
-    const weeklyData = storageService.getDailyTotals(7);
-    const weeklyAverage = weeklyData.length > 0 
-      ? weeklyData.reduce((sum, day) => sum + day.total, 0) / weeklyData.length 
-      : 0;
-    
-    const monthlyData = storageService.getDailyTotals(30);
-    const monthlyAverage = monthlyData.length > 0 
-      ? monthlyData.reduce((sum, day) => sum + day.total, 0) / monthlyData.length 
-      : 0;
-
-    setStats({
-      today: Math.round(todayTotal),
-      week: Math.round(weeklyAverage),
-      month: Math.round(monthlyAverage)
-    });
-
-    // 准备图表数据
-    let chartDays = 7;
-    if (activeTab === '30days') chartDays = 30;
-    else if (activeTab === '7days') chartDays = 7;
-    else chartDays = 7; // 默认显示7天趋势
-
-    const dailyTotals = storageService.getDailyTotals(chartDays);
-    const labels = dailyTotals.map(item => {
-      const date = new Date(item.date);
-      return `${date.getMonth() + 1}/${date.getDate()}`;
-    });
-    const data = dailyTotals.map(item => item.total);
-
-    setChartData({
-      labels,
-      datasets: [
-        {
-          label: '每日摄入热量',
-          data,
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
-          borderWidth: 2,
-          pointBackgroundColor: '#10b981',
-          pointBorderColor: '#ffffff',
-          pointBorderWidth: 2,
-          pointRadius: 4,
-          tension: 0.3,
-        },
-      ],
-    });
+  const loadAllRecords = () => {
+    const records = storageService.getRecords();
+    // 按日期和时间降序排序（最新的在前）
+    const sortedRecords = records.sort((a, b) => b.timestamp - a.timestamp);
+    setAllRecords(sortedRecords);
   };
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-    },
-    scales: {
-      x: {
-        grid: {
-          display: false,
-        },
-      },
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: '#f3f4f6',
-        },
-      },
-    },
-  };
-
-  const getStatValue = () => {
-    switch (activeTab) {
-      case 'today': return stats.today;
-      case '7days': return stats.week;
-      case '30days': return stats.month;
-      default: return stats.today;
+  const handleDeleteRecord = (id: string) => {
+    if (window.confirm('确定要删除这条记录吗？')) {
+      storageService.deleteRecord(id);
+      // 重新加载数据
+      loadAllRecords();
     }
   };
-
-  const getStatLabel = () => {
-    switch (activeTab) {
-      case 'today': return '今日总计';
-      case '7days': return '近7天日均';
-      case '30days': return '近30天日均';
-      default: return '今日总计';
-    }
-  };
-
-  if (showTodayDetails) {
-    return <TodayDetails onBack={() => setShowTodayDetails(false)} />;
-  }
 
   return (
-    <div className="flex-1 flex flex-col bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="bg-gradient-to-r from-blue-500 to-purple-600 px-6 py-6 shadow-lg">
-        <h1 className="text-xl font-bold text-white text-center">📊 健康数据中心</h1>
-        <p className="text-blue-100 text-center text-sm mt-1">追踪您的饮食健康趋势</p>
+    <div className="flex-1 flex flex-col bg-gradient-to-br from-emerald-50 via-white to-teal-50">
+      {/* 标题栏 */}
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-6 shadow-lg">
+        <h1 className="text-2xl font-bold text-white text-center">🍎 识别记录</h1>
+        <p className="text-emerald-100 text-center text-base mt-1">查看您的所有食物识别记录</p>
       </div>
 
-      {/* 图表区域 */}
-      <div className="bg-white/80 backdrop-blur-lg p-6 mx-4 mt-6 rounded-3xl shadow-xl border border-white/50">
+      {/* 主内容区域 */}
+      <div className="bg-white/90 backdrop-blur-lg p-4 sm:p-6 mx-3 sm:mx-4 mt-6 rounded-3xl shadow-xl border border-white/50 flex-1">
         <div className="flex items-center mb-6">
-          <div className="w-3 h-8 bg-gradient-to-b from-blue-500 to-purple-600 rounded-full mr-3"></div>
-          <h2 className="text-xl font-bold text-gray-900">热量趋势分析</h2>
-        </div>
-        <div className="h-52 bg-gradient-to-br from-blue-50/50 to-purple-50/50 rounded-2xl p-4">
-          {chartData && <Line data={chartData} options={chartOptions} />}
-        </div>
-      </div>
-
-      {/* 统计数据区域 */}
-      <div className="bg-white/80 backdrop-blur-lg p-6 mx-4 mt-6 rounded-3xl shadow-xl border border-white/50">
-        <div className="flex justify-center space-x-2 mb-8">
-          {[
-            { key: 'today' as const, label: '今天' },
-            { key: '7days' as const, label: '7天' },
-            { key: '30days' as const, label: '30天' }
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-6 py-3 rounded-2xl font-bold transition-all duration-300 transform ${
-                activeTab === tab.key
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          <div className="w-3 h-8 bg-gradient-to-b from-emerald-500 to-teal-600 rounded-full mr-3"></div>
+          <h2 className="text-2xl font-bold text-gray-900">历史记录</h2>
         </div>
 
-        <div 
-          className={`text-center p-8 rounded-3xl border-2 transition-all duration-300 cursor-pointer transform hover:scale-105 ${
-            activeTab === 'today' 
-              ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 shadow-lg' 
-              : 'border-gray-200 bg-gradient-to-br from-gray-50 to-blue-50 hover:shadow-lg'
-          }`}
-          onClick={() => activeTab === 'today' && setShowTodayDetails(true)}
-        >
-          <div className="text-5xl font-bold text-gray-900 mb-2">
-            {getStatValue()} <span className="text-2xl text-gray-600">千卡</span>
-          </div>
-          <div className="text-gray-700 font-medium text-lg">{getStatLabel()}</div>
-          {activeTab === 'today' && (
-            <div className="text-sm text-emerald-600 mt-3 font-medium bg-emerald-100 rounded-full px-4 py-1 inline-block">
-              点击查看详情 →
+        {allRecords.length === 0 ? (
+          // 空状态
+          <div className="text-center py-20 bg-gradient-to-br from-gray-50 to-emerald-50 rounded-3xl shadow-sm">
+            <div className="w-32 h-32 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg transform rotate-3">
+              <Camera className="w-16 h-16 text-white" />
             </div>
-          )}
-        </div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">暂无识别记录</h3>
+            <p className="text-gray-600 text-base">去拍照或上传图片开始识别吧！</p>
+          </div>
+        ) : (
+          // 记录列表 - 简单列表形式
+          <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2 pb-4">
+            {allRecords.map((record) => (
+              <div key={record.id} className="flex flex-col sm:flex-row sm:items-center p-4 bg-gradient-to-r from-gray-50 to-emerald-50/30 rounded-2xl shadow-md border border-emerald-100 hover:shadow-lg transition-all duration-300 space-y-4 sm:space-y-0 sm:space-x-4">
+                {record.imagePath && (
+                  <div className="relative self-center sm:self-auto">
+                    <img
+                      src={record.imagePath}
+                      alt={record.foodName}
+                      className="w-64 h-36 sm:w-40 sm:h-22.5 object-cover rounded-2xl shadow-md transform hover:scale-105 transition-transform"
+                    />
+                    <button
+                      onClick={() => handleDeleteRecord(record.id)}
+                      className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md text-red-500 hover:text-red-700 hover:bg-red-50 transition-all"
+                      aria-label="删除记录"
+                    >
+                      <MinusCircle size={20} />
+                    </button>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-xl sm:text-lg">{record.foodName}</h3>
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600 font-medium mt-1">
+                        <span>{record.date}</span>
+                      </div>
+                    </div>
+                    <div className="text-center sm:text-right">
+                      <div className="font-bold text-emerald-600 text-xl sm:text-lg bg-emerald-50 px-4 py-2 rounded-full shadow-sm whitespace-nowrap">
+                        {record.calorie} 千卡
+                      </div>
+                    </div>
+                  </div>
+                  {record.healthTips && (
+                    <div className="mt-3 bg-blue-50 rounded-xl p-3 border border-blue-100 shadow-sm">
+                      <div className="flex items-start space-x-2">
+                        <div className="mt-0.5 bg-blue-100 p-1 rounded-full flex-shrink-0">
+                          <Info size={14} className="text-blue-600" />
+                        </div>
+                        <p className="text-blue-800 text-xs sm:text-sm leading-relaxed">
+                          <strong>💡 健康建议：</strong>{record.healthTips}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 免责声明 */}

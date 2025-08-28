@@ -23,6 +23,16 @@ export const storageService = {
     }
   },
 
+  deleteRecord(id: string): void {
+    try {
+      const records = this.getRecords();
+      const filteredRecords = records.filter(record => record.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredRecords));
+    } catch (error) {
+      console.error('Error deleting from localStorage:', error);
+    }
+  },
+
   getTodayRecords(): CalorieRecord[] {
     const today = new Date().toISOString().split('T')[0];
     return this.getRecords().filter(record => record.date === today);

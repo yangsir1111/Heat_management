@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Image, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Camera, Image, Loader2, AlertCircle, RefreshCw, Share2, Info } from 'lucide-react';
 import { aiService } from '../services/aiService';
 import { storageService } from '../services/storage';
 import { CalorieRecord, RecognitionResult } from '../types';
@@ -188,9 +188,23 @@ export const RecognitionPage: React.FC = () => {
                         <p className="text-lg font-bold text-gray-900">{result.nutrition.fat}</p>
                       </div>
                       {result.gi_value !== undefined && (
-                        <div className="bg-white rounded-xl p-3 shadow-sm">
+                        <div className="bg-white rounded-xl p-3 shadow-sm relative group">
                           <p className="text-xs text-purple-600 mb-1">GI值</p>
                           <p className="text-lg font-bold text-gray-900">{result.gi_value}</p>
+                          <div className="absolute top-2 right-2">
+                            <button
+                              className="text-gray-400 hover:text-purple-600 p-1 rounded-full hover:bg-purple-50 transition-colors"
+                              aria-label="GI值解释"
+                            >
+                              <Info size={16} />
+                            </button>
+                            <div className="absolute right-0 bottom-full mb-2 w-64 bg-white rounded-lg shadow-lg p-3 border border-gray-200 text-sm text-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                              <strong className="block mb-1">GI值是什么？</strong>
+                              <p className="text-xs leading-relaxed">
+                                GI值（升糖指数）是衡量食物使血糖升高速度的指标。数值越低，血糖上升越慢，越有利于控制血糖；数值越高，血糖上升越快。
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -205,12 +219,39 @@ export const RecognitionPage: React.FC = () => {
                   <p className="text-blue-800 text-sm leading-relaxed">{result.health_tips}</p>
                 </div>
                 
-                <button
-                  onClick={resetState}
-                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-4 px-8 rounded-2xl font-bold hover:from-emerald-600 hover:to-teal-700 transition-all duration-300 shadow-lg transform hover:scale-105"
-                >
-                  继续识别
-                </button>
+                <div className="flex space-x-4">
+                  <button
+                    onClick={() => {
+                      if (navigator.share) {
+                        navigator.share({
+                          title: '食物识别结果',
+                          text: `我刚刚识别了${result?.food_name}，热量约为${result?.calorie_estimate}千卡。`,
+                          url: window.location.href
+                        }).catch(() => {
+                          // 分享失败，降级处理
+                          navigator.clipboard.writeText(`食物识别结果：${result?.food_name}，热量约为${result?.calorie_estimate}千卡。`).then(() => {
+                            alert('分享内容已复制到剪贴板');
+                          });
+                        });
+                      } else {
+                        // 不支持分享API，使用剪贴板
+                        navigator.clipboard.writeText(`食物识别结果：${result?.food_name}，热量约为${result?.calorie_estimate}千卡。`).then(() => {
+                          alert('分享内容已复制到剪贴板');
+                        });
+                      }
+                    }}
+                    className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-4 px-8 rounded-2xl font-bold hover:from-blue-600 hover:to-indigo-700 transition-all duration-300 shadow-lg transform hover:scale-105 flex items-center justify-center space-x-2"
+                  >
+                    <Share2 size={20} />
+                    <span>分享结果</span>
+                  </button>
+                  <button
+                    onClick={resetState}
+                    className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-4 px-8 rounded-2xl font-bold hover:from-emerald-600 hover:to-teal-700 transition-all duration-300 shadow-lg transform hover:scale-105"
+                  >
+                    继续识别
+                  </button>
+                </div>
               </div>
             )}
             

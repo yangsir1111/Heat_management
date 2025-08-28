@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Clock } from 'lucide-react';
+import { ArrowLeft, Clock, Trash2 } from 'lucide-react';
 import { storageService } from '../services/storage';
 import { CalorieRecord } from '../types';
 
@@ -121,6 +121,20 @@ export const TodayDetails: React.FC<TodayDetailsProps> = ({ onBack }) => {
                     </p>
                   )}
                 </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`确定要删除"${record.foodName}"的记录吗？`)) {
+                      storageService.deleteRecord(record.id);
+                      const updatedRecords = todayRecords.filter(r => r.id !== record.id);
+                      setTodayRecords(updatedRecords);
+                      setTotalCalories(updatedRecords.reduce((sum, r) => sum + r.calorie, 0));
+                    }
+                  }}
+                  className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition-colors"
+                  aria-label="删除记录"
+                >
+                  <Trash2 size={18} />
+                </button>
               </div>
             ))}
           </div>
