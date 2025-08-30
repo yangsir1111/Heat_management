@@ -1,5 +1,4 @@
 import { CalorieRecord } from '../types';
-
 const STORAGE_KEY = 'calorie_records';
 
 export const storageService = {

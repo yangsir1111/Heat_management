@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Image, Loader2, AlertCircle, RefreshCw, Share2, Info, ChevronLeft, Wifi, Server, Smartphone } from 'lucide-react';
-import { aiService } from '../services/aiService';
+import { LoadingSpinner } from './LoadingSpinner';
+import { aiService, fileToBase64 } from '../services/aiService';
 import { storageService } from '../services/storage';
 import { CalorieRecord, RecognitionResult } from '../types';
 // 确保移动端显示正确的图片识别状态
+
+// 确保lucide-react图标能够正常工作
+console.log('Lucide icons loaded:', { Camera, Image, Loader2 });
 
 export const RecognitionPage: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -36,9 +40,17 @@ export const RecognitionPage: React.FC = () => {
   };
 
   const handleImageUpload = () => {
+    if (!isOnline) {
+      setError('网络连接已断开，请连接网络后重试');
+      return;
+    }
+    
     if (fileInputRef.current) {
+      console.log('触发图片上传选择器');
       fileInputRef.current.removeAttribute('capture');
       fileInputRef.current.click();
+    } else {
+      console.warn('文件输入引用不存在');
     }
   };
 
@@ -70,14 +82,31 @@ export const RecognitionPage: React.FC = () => {
         setIsRecognizing(true);
       }, 500);
 
+      // 使用真实的AI识别，不再使用模拟数据
+      console.log('开始AI识别流程');
+
       try {
+        // 额外的图片尺寸验证 - 通义千问VL模型要求至少10x10像素
+        const imageDimensions = await getImageDimensions(imageUrl);
+        if (imageDimensions.width < 10 || imageDimensions.height < 10) {
+          throw new Error('图片尺寸过小，请上传尺寸至少为10x10像素的图片');
+        }
+        
         // 压缩图片 - 移动端优化：对大图片进行更彻底的压缩
         const maxSize = window.innerWidth < 768 ? 600 : 800; // 移动端使用更小的最大尺寸
         const compressedFile = await aiService.compressImage(file, maxSize);
         
+        console.log('准备调用AI服务，压缩后图片大小:', compressedFile.size);
+        
+        // 检查base64数据（仅前100个字符）
+        const testBase64 = await fileToBase64(compressedFile);
+        console.log('base64数据前100个字符:', testBase64.substring(0, 100));
+        console.log('base64数据总长度:', testBase64.length);
+        
         // 调用AI识别服务
         const recognitionResult = await aiService.recognizeFood(compressedFile);
         
+        console.log('识别成功，结果:', recognitionResult);
         setResult(recognitionResult);
         
         // 保存识别结果到本地存储
@@ -100,15 +129,47 @@ export const RecognitionPage: React.FC = () => {
         
       } catch (err) {
         // 处理识别过程中的错误
-        setError(err instanceof Error ? err.message : '识别失败');
+        console.error('识别过程错误:', err);
+        const errorMsg = err instanceof Error ? err.message : '识别失败';
+        setError(errorMsg);
       }
     } catch (err) {
       // 处理图片选择和预处理错误
-      setError(err instanceof Error ? err.message : '处理图片时出错');
+      console.error('图片处理错误:', err);
+      const errorMsg = err instanceof Error ? err.message : '处理图片时出错';
+      setError(errorMsg);
     } finally {
       setIsRecognizing(false);
       setIsProcessingImage(false);
     }
+  };
+  
+  // 获取图片尺寸的辅助函数 - 增加环境检查以避免服务器端执行错误
+  const getImageDimensions = (imageUrl: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve, reject) => {
+      // 检查是否在浏览器环境中
+      if (typeof window === 'undefined' || typeof Image === 'undefined') {
+        // 在非浏览器环境中返回默认尺寸
+        console.warn('在非浏览器环境中调用getImageDimensions，返回默认尺寸');
+        resolve({ width: 100, height: 100 });
+        return;
+      }
+      
+      try {
+        const img = new Image();
+        img.onload = () => {
+          resolve({ width: img.width, height: img.height });
+        };
+        img.onerror = () => {
+          reject(new Error('无法加载图片'));
+        };
+        img.src = imageUrl;
+      } catch (error) {
+        console.error('创建Image对象失败:', error);
+        // 出错时返回默认尺寸
+        resolve({ width: 100, height: 100 });
+      }
+    });
   };
 
   const resetState = () => {
@@ -237,7 +298,11 @@ export const RecognitionPage: React.FC = () => {
             
             {result && (
               <div className="bg-gradient-to-t from-white to-gray-50 p-6">
-                <div className="text-center mb-6">
+                                 <div className="text-center mb-6">
+                   {/* AI识别结果提示 */}
+                   <div className="text-xs text-gray-500 mb-2">
+                     <span className="font-medium">AI识别结果:</span> 基于通义千问VL模型的智能识别
+                   </div>
                   <h2 className="text-3xl font-bold text-gray-900 mb-3">{result.food_name}</h2>
                   <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 mb-4 shadow-lg">
                     <div className="flex items-center justify-center space-x-2">
@@ -303,6 +368,25 @@ export const RecognitionPage: React.FC = () => {
                     健康建议
                   </h3>
                   <p className="text-blue-800 text-sm leading-relaxed">{result.health_tips}</p>
+                  
+                  {/* 糖尿病适用性建议 */}
+                  {result.suitable_for_diabetes && (
+                    <div className="mt-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-3 border border-green-100">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-green-600">🩺</span>
+                        <span className="text-sm font-medium text-green-800">糖尿病适用性：</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          result.suitable_for_diabetes === '适合' 
+                            ? 'bg-green-100 text-green-800' 
+                            : result.suitable_for_diabetes === '适量' 
+                            ? 'bg-yellow-100 text-yellow-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {result.suitable_for_diabetes}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex space-x-4">

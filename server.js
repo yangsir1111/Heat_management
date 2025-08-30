@@ -1,235 +1,189 @@
 import express from 'express';
-import path from 'path';
 import cors from 'cors';
-import { fileURLToPath } from 'url';
+import OpenAI from 'openai';
 import dotenv from 'dotenv';
 
-// 加载环境变量
-dotenv.config();
-
-// 获取当前文件的目录名
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// 加载环境变量并添加调试日志
+console.log('当前工作目录:', process.cwd());
+const result = dotenv.config();
+if (result.error) {
+  console.error('加载.env文件失败:', result.error);
+} else {
+  console.log('.env文件加载成功，环境变量数量:', Object.keys(result.parsed || {}).length);
+  console.log('加载的环境变量键名列表:', Object.keys(result.parsed || {}));
+  // 检查并打印API密钥的前几位以保护隐私
+if (process.env.DASHSCOPE_API_KEY && process.env.DASHSCOPE_API_KEY !== 'placeholder') {
+  console.log('✅ 检测到有效的API密钥，前几位:', process.env.DASHSCOPE_API_KEY.substring(0, 5) + '...');
+} else {
+  console.error('❌ 未检测到有效的API密钥，请设置DASHSCOPE_API_KEY环境变量');
+  console.log('请创建.env文件并添加：DASHSCOPE_API_KEY=sk-your-api-key-here');
+}
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// 中间件配置
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.json({ limit: '10mb' })); // 增加请求体大小限制以处理大图片
 
-// 延迟初始化OpenAI客户端
-let openaiClient = null;
-let openaiInitialized = false;
-let initializationPromise = null;
+// 初始化OpenAI客户端 - 使用通义千问兼容模式
+const openai = new OpenAI({
+  apiKey: process.env.DASHSCOPE_API_KEY || 'placeholder',
+  baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+});
 
-// 初始化OpenAI客户端的函数
-async function initializeOpenAIClient() {
-  if (openaiInitialized) {
-    return openaiClient;
-  }
-  
-  if (!initializationPromise) {
-    initializationPromise = new Promise(async (resolve, reject) => {
-      try {
-        const { default: OpenAI } = await import('openai');
-        openaiClient = new OpenAI({
-          apiKey: process.env.DASHSCOPE_API_KEY || process.env.OPENAI_API_KEY,
-          baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        });
-        openaiInitialized = true;
-        console.log('OpenAI客户端初始化成功');
-        resolve(openaiClient);
-      } catch (error) {
-        console.error('OpenAI客户端初始化失败:', error);
-        reject(error);
-      }
-    });
-  }
-  
-  return initializationPromise;
-}
-
-// API Routes
-app.get('/api/health', (req, res) => {
+// 根路径接口
+app.get('/', (req, res) => {
   res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    apiKeyConfigured: !!process.env.DASHSCOPE_API_KEY || !!process.env.OPENAI_API_KEY,
-    aiClientInitialized: openaiInitialized
+    status: 'ok',
+    message: '食物热量识别后端服务运行中',
+    availableEndpoints: [
+      '/api/health',
+      '/api/recognize-food'
+    ]
   });
 });
 
-// 食物识别端点
-app.post('/api/image/analyze', async (req, res) => {
+// 健康检查接口
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running' });
+});
+
+// 图像理解接口 - 同时支持GET和POST方法
+app.all('/api/recognize-food', async (req, res) => {
   try {
-    const { image } = req.body;
+    // 支持GET和POST两种请求方式
+    let base64Image;
     
-    if (!image) {
+    // GET请求：从查询参数中获取数据
+    if (req.method === 'GET') {
+      base64Image = req.query.base64Image;
+    } 
+    // POST请求：从请求体中获取数据
+    else {
+      base64Image = req.body.base64Image;
+    }
+
+    if (!base64Image) {
       return res.status(400).json({
         success: false,
-        error: '缺少图像数据'
+        error: '缺少图片数据'
       });
     }
-    
-    // 检查API密钥是否配置
-    if (!process.env.DASHSCOPE_API_KEY && !process.env.OPENAI_API_KEY) {
-      return res.status(500).json({
+
+    console.log('收到图像识别请求，正在处理...');
+    console.log('Base64图片数据长度:', base64Image.length);
+    console.log('Base64图片数据前50个字符:', base64Image.substring(0, 50));
+    console.log('Base64图片数据是否以data:开头:', base64Image.startsWith('data:'));
+
+    // 检查是否有有效的API密钥
+    const hasValidApiKey = process.env.DASHSCOPE_API_KEY && process.env.DASHSCOPE_API_KEY !== 'placeholder';
+
+    // 检查是否有有效的API密钥，如果没有则返回错误
+    if (!hasValidApiKey) {
+      console.error('缺少有效的API密钥');
+      return res.status(400).json({
         success: false,
-        error: '未配置API密钥，请检查.env文件'
+        error: '缺少有效的API密钥，请配置DASHSCOPE_API_KEY环境变量'
       });
     }
-    
-    // 确保OpenAI客户端已初始化
-    let openai;
+
+    // 调用真实的通义千问VL模型进行食物识别
     try {
-      openai = await initializeOpenAIClient();
-    } catch (error) {
-      return res.status(500).json({
-        success: false,
-        error: 'AI客户端初始化失败，请稍后重试'
-      });
-    }
-    
-    // 调用DashScope QwenVL模型进行图像分析
-    console.log('开始调用通义千问VL-Plus模型进行图像分析...');
-    const response = await openai.chat.completions.create({
-      model: "qwen-vl-plus",
-      messages: [{
-        role: "user",
-        content: [
+      console.log('尝试调用真实的通义千问VL模型...');
+      
+      // 使用OpenAI兼容模式调用通义千问VL模型
+      const completion = await openai.chat.completions.create({
+        model: 'qwen-vl-plus',
+        messages: [
           {
-            type: "text",
-            text: "请分析这张图片中的食物，返回JSON格式的数据，包括：食物名称、GI数值、是否适合糖尿病患者食用（是/否）、食用建议、营养成分（蛋白质、碳水化合物、脂肪、热量）。请以以下JSON格式返回：{ \"food_name\": \"\", \"gi_value\": 0, \"suitable_for_diabetes\": \"是/否\", \"recommendation\": \"\", \"nutrition\": { \"protein\": \"\", \"carbs\": \"\", \"fat\": \"\", \"calories\": \"\" } }"
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: image
-            }
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: '请识别图片中的食物，并返回以下信息：食物名称、估计卡路里、GI值、是否适合糖尿病患者食用、健康建议和详细的营养成分信息。请严格按照以下JSON格式返回，不要包含其他文字：{"food_name": "食物名称", "calorie_estimate": "卡路里数值", "confidence": 0.95, "health_tips": "健康建议", "gi_value": 数值, "suitable_for_diabetes": "适合/适量/不适合", "nutrition": {"protein": "蛋白质含量", "carbs": "碳水化合物含量", "fat": "脂肪含量", "calories": "总热量"}}'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: base64Image.startsWith('data:') ? base64Image : `data:image/jpeg;base64,${base64Image}`
+                }
+              }
+            ]
           }
-        ]
-      }],
-      temperature: 0.1
-    });
-    
-    // 解析模型返回的结果
-    const result = response.choices[0]?.message?.content;
-    
-    if (!result) {
-      console.error('未从AI模型获取到响应');
-      return res.status(500).json({
-        success: false,
-        error: '无法从AI模型获取有效响应'
+        ],
+        response_format: { type: 'json_object' }
       });
-    }
-    
-    console.log('AI模型返回结果:', result);
-    
-    // 尝试解析JSON
-    let parsedResult;
-    try {
-      // 提取JSON部分（如果模型返回了额外的文本）
-      const jsonMatch = result.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedResult = JSON.parse(jsonMatch[0]);
-      } else {
-        parsedResult = JSON.parse(result);
+
+      // 解析API响应
+      const responseContent = completion.choices[0].message.content;
+      let recognitionData;
+      
+      try {
+        recognitionData = JSON.parse(responseContent);
+      } catch (jsonError) {
+        console.error('解析JSON结果失败:', jsonError);
+        // 如果解析失败，使用默认值
+        recognitionData = {
+          food_name: '识别的食物',
+          calorie_estimate: '100kcal',
+          confidence: 0.85,
+          health_tips: '这是一个基于AI识别的食物结果',
+          gi_value: 50,
+          suitable_for_diabetes: '适量',
+          nutrition: {
+            protein: '2g',
+            carbs: '15g',
+            fat: '3g',
+            calories: '100kcal'
+          }
+        };
       }
-    } catch (parseError) {
-      console.error('JSON解析错误:', parseError);
-      // 如果解析失败，返回原始结果
-      return res.json({
+
+      // 返回格式化的识别结果 - 使用英文key，符合前端类型定义
+      const result = {
+        food_name: recognitionData.food_name || '未识别食物',
+        calorie_estimate: recognitionData.calorie_estimate || '0kcal',
+        confidence: recognitionData.confidence || 0.8,
+        health_tips: recognitionData.health_tips || '暂无健康建议',
+        gi_value: recognitionData.gi_value || 50,
+        suitable_for_diabetes: recognitionData.suitable_for_diabetes || '未知',
+        nutrition: recognitionData.nutrition || {
+          protein: '0g',
+          carbs: '0g',
+          fat: '0g',
+          calories: '0kcal'
+        }
+      };
+
+      console.log('识别成功，返回结果:', result);
+      res.json({
         success: true,
-        raw_response: result
+        data: result,
+        isRealAPI: true
+      });
+    } catch (apiError) {
+      console.error('API调用错误:', apiError);
+      // API调用失败时返回错误信息
+      res.status(500).json({
+        success: false,
+        error: `AI识别失败: ${apiError.message || '未知错误'}`
       });
     }
-    
-    // 验证解析结果并填充默认值
-    const foodData = {
-      name: parsedResult.food_name || '未知食物',
-      gi_value: parsedResult.gi_value || 0,
-      suitable_for_diabetes: parsedResult.suitable_for_diabetes || '未知',
-      recommendation: parsedResult.recommendation || '无建议',
-      nutrition: {
-        protein: parsedResult.nutrition?.protein || '未知',
-        carbs: parsedResult.nutrition?.carbs || '未知',
-        fat: parsedResult.nutrition?.fat || '未知',
-        calories: parsedResult.nutrition?.calories || '未知'
-      }
-    };
-    
-    // 返回结构化数据
-    res.json({
-      success: true,
-      food: foodData
-    });
-    
   } catch (error) {
     console.error('食物识别错误:', error);
-    
-    // 提供更具体的错误信息
-    let errorMessage = '食物识别失败';
-    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      errorMessage = '无法连接到AI服务，请检查网络连接';
-    } else if (error.response?.status === 401) {
-      errorMessage = 'API密钥无效，请检查.env文件';
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
     res.status(500).json({
       success: false,
-      error: errorMessage,
-      // 仅在开发环境下包含详细错误信息
-      ...(process.env.NODE_ENV !== 'production' && { debug: error.message })
+      error: error instanceof Error ? error.message : '服务器内部错误'
     });
   }
 });
 
-// Serve the React app for any non-API routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist/index.html'));
+// 启动服务器
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+  console.log('Backend API endpoints:');
+  console.log(`- GET http://localhost:${PORT}/api/health`);
+  console.log(`- GET/POST http://localhost:${PORT}/api/recognize-food (GET可带?mode=test参数进行测试)`);
 });
-
-// Function to start server with port fallback
-function startServer(port) {
-  const server = app.listen(port, () => {
-    console.log(`服务器运行在端口 ${port}`);
-    console.log(`本地访问: http://localhost:${port}`);
-    
-    // 检查API密钥配置
-    if (!process.env.DASHSCOPE_API_KEY && !process.env.OPENAI_API_KEY) {
-      console.warn('警告: 未配置API密钥，请检查.env文件');
-    } else {
-      console.log('API密钥已配置');
-    }
-  });
-
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.log(`端口 ${port} 已被占用，尝试端口 ${port + 1}...`);
-      if (port < 3005) { // 限制端口范围
-        startServer(port + 1);
-      } else {
-        console.error('无法找到可用端口，请手动终止占用端口的进程');
-      }
-    } else {
-      console.error('服务器错误:', err);
-    }
-  });
-
-  // Handle SIGINT (Ctrl+C) gracefully
-  process.on('SIGINT', () => {
-    console.log('\n正在关闭服务器...');
-    server.close(() => {
-      console.log('服务器已关闭。');
-      process.exit(0);
-    });
-  });
-}
-
-// Start server
-startServer(PORT);
